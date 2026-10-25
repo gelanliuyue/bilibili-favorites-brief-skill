@@ -1,0 +1,4 @@
+interface:
+  display_name: "B站收藏夹知识卡"
+  short_description: "批量生成收藏夹视频知识卡与总报告"
+  default_prompt: "Use $bilibili-favorites-brief to process one of my Bilibili favorite folders and build the full report."
