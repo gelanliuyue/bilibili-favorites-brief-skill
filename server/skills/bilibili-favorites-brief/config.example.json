@@ -1,0 +1,7 @@
+{
+  "project_root": "C:\\path\\to\\bili-brief",
+  "backend_url": "http://127.0.0.1:8483",
+  "output_root": "C:\\Users\\your-name\\Documents\\BiliBrief",
+  "provider_id": "deepseek",
+  "model_name": "deepseek-chat"
+}
