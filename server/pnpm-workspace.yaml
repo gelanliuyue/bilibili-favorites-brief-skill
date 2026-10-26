@@ -1,0 +1,6 @@
+packages:
+  - "BillNote_frontend"
+
+allowBuilds:
+  core-js: true
+  esbuild: true
