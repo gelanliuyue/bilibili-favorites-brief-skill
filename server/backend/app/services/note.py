@@ -31,7 +31,7 @@ from app.services.constant import SUPPORT_PLATFORM_MAP
 from app.services.provider import ProviderService
 from app.transcriber.base import Transcriber
 from app.transcriber.transcriber_provider import get_transcriber, _transcribers
-from app.utils.note_helper import replace_content_markers, prepend_source_link
+from app.utils.note_helper import replace_content_markers, prepend_source_link, append_related_links
 from app.utils.screenshot_marker import extract_screenshot_timestamps
 from app.utils.status_code import StatusCode
 from app.utils.video_helper import generate_screenshot
@@ -222,6 +222,13 @@ class NoteGenerator:
                     audio_meta=audio_meta,
                     platform=platform,
                 )
+
+            # 4.5 简介里的外链（仓库/文档/网盘）以精确原文追加为「相关链接」小节，
+            #     由代码写入而非交给模型复述，避免 URL 被改写后失效
+            markdown = append_related_links(
+                markdown,
+                (audio_meta.raw_info or {}).get("description"),
+            )
 
             markdown = prepend_source_link(markdown, str(video_url))
 
@@ -604,6 +611,7 @@ class NoteGenerator:
             title=audio_meta.title,
             segment=transcript.segments,
             tags=audio_meta.raw_info.get("tags", []),
+            desc=(audio_meta.raw_info or {}).get("description"),
             screenshot=screenshot,
             video_img_urls=video_img_urls,
             link=link,

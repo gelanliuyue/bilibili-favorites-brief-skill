@@ -38,7 +38,8 @@ class QwenGPT(GPT):
         content = BASE_PROMPT.format(
             video_title=title,
             segment_text=self._build_segment_text(segments),
-            tags=tags
+            tags=tags,
+            video_desc="（无）",
         )
         if self.screenshot:
             print(":需要截图")

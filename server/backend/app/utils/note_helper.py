@@ -64,3 +64,60 @@ def replace_content_markers(markdown: str, video_id: str, platform: str = 'bilib
 
     return re.sub(pattern, replacer, markdown)
 
+
+# 匹配简介里出现的 http/https 链接，遇到空白、引号、括号或中文标点即停止
+_URL_PATTERN = re.compile(r"https?://[^\s<>\"'）)】\]】，。；、]+")
+# 链接末尾常见的英文标点，属于句子而不是 URL
+_URL_TRAILING = ".,;:!?)]}>\"'"
+
+
+def extract_urls(text: str, limit: int = 10) -> list[str]:
+    """
+    从简介文本中按出现顺序抽取 URL 并去重。
+
+    只做字符串截取，不改写 URL 任何部分，保证 GitHub / 网盘等链接原样可用。
+    """
+    if not text:
+        return []
+
+    urls: list[str] = []
+    seen: set[str] = set()
+    for raw in _URL_PATTERN.findall(str(text)):
+        url = raw.rstrip(_URL_TRAILING)
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        urls.append(url)
+        if len(urls) >= limit:
+            break
+    return urls
+
+
+def append_related_links(
+    markdown: str | None,
+    description: str | None,
+    limit: int = 10,
+    heading: str = "## 相关链接",
+) -> str | None:
+    """
+    把简介里的链接以「相关链接」小节追加到笔记末尾。
+
+    链接由代码直接写入而非常让模型复述，避免模型改写 URL 导致链接失效；
+    用 `<url>` 自动链接语法包裹，既保证可点击，也不受 Markdown 特殊字符影响。
+    """
+    if markdown is None:
+        return None
+
+    urls = extract_urls(description, limit=limit)
+    if not urls:
+        return markdown
+
+    if heading in markdown:
+        # 已存在同名小节时不重复追加，避免历史笔记被叠加
+        return markdown
+
+    section = "\n".join(f"- <{url}>" for url in urls)
+    body = f"{heading}\n\n{section}\n"
+    stripped = markdown.rstrip()
+    return f"{stripped}\n\n{body}" if stripped else body
+

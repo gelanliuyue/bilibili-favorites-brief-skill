@@ -20,13 +20,31 @@ note_styles = [
 ]
 
 
+# 简介在 prompt 里的字符上限。B 站简介上限 2000 字，但不少 UP 主会贴整篇文章，
+# 不截断会把分段字幕挤到上下文之外。
+MAX_DESC_CHARS = 1500
+
+
+def _normalize_desc(desc) -> str:
+    """把平台简介整理成可放进 prompt 的纯文本，并做长度截断。"""
+    if desc is None:
+        return "（无）"
+    text = str(desc).strip()
+    if not text:
+        return "（无）"
+    if len(text) > MAX_DESC_CHARS:
+        text = text[:MAX_DESC_CHARS].rstrip() + "……（简介过长，已截断）"
+    return text
+
+
 # 生成 BASE_PROMPT 函数
-def generate_base_prompt(title, segment_text, tags, _format=None, style=None, extras=None):
+def generate_base_prompt(title, segment_text, tags, _format=None, style=None, extras=None, desc=None):
     # 生成 Base Prompt 开头部分
     prompt = BASE_PROMPT.format(
         video_title=title,
         segment_text=segment_text,
-        tags=tags
+        tags=tags,
+        video_desc=_normalize_desc(desc),
     )
 
     # 添加用户选择的格式
@@ -105,9 +123,11 @@ def get_style_format(style):
 输出 1-5 条用户看完视频后可以立即执行的动作。视频没有给出行动建议时写 `- 看完后按章节回看关键片段`。
 
 事实约束：
-- 只能使用视频字幕中明确出现的信息，不得虚构视频未讲过的观点、数字、案例或结论。
+- 只能使用视频字幕与视频简介中明确出现的信息，不得虚构视频未讲过的观点、数字、案例或结论。
+- 简介只用于理解背景（主题、素材来源、外部资源）；不得把简介内容表述为"视频中讲到"。
 - 字幕含糊时使用“视频提到”而不是补全事实。
 - 不输出代码块，不在固定标题前后添加其他二级标题。
+- 不要输出「相关链接」小节，系统会自动附加简介里的精确链接。
 '''
     }
     return style_map.get(style, '')
