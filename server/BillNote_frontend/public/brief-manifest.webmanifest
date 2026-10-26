@@ -1,0 +1,18 @@
+{
+  "name": "BiliBrief 视频知识助手",
+  "short_name": "BiliBrief",
+  "description": "把 B 站教程变成可判断、可检索、可回看的摘要和思维导图。",
+  "start_url": "./brief",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f3f1ea",
+  "theme_color": "#d84f77",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
