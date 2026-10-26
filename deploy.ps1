@@ -53,8 +53,10 @@ function Get-PythonVersion($exe) {
 }
 
 $chosen = $null
+$chosenVer = $null
 if ($PythonExe) {
     $chosen = $PythonExe
+    $chosenVer = Get-PythonVersion $PythonExe
 } else {
     foreach ($candidate in @('py -3', 'python', 'python3')) {
         $parts = $candidate.Split(' ')
@@ -63,13 +65,39 @@ if ($PythonExe) {
         $ver = if ($parts.Length -gt 1) { Get-PythonVersion "$($cmd.Source) $($parts[1])" } else { Get-PythonVersion $cmd.Source }
         if ($ver -and $ver -ge [version]'3.10') {
             $chosen = if ($parts.Length -gt 1) { "$($cmd.Source) $($parts[1])" } else { $cmd.Source }
+            $chosenVer = $ver
             Write-Ok "python $ver -> $chosen"
             break
         }
     }
 }
+
+if (-not $chosen) {
+    # PATH 上没有，回退到常见安装位置（Windows 安装器默认落点）
+    $patterns = @(
+        (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python3*\python.exe'),
+        (Join-Path $env:ProgramFiles 'Python3*\python.exe'),
+        'C:\Python3*\python.exe'
+    )
+    foreach ($pattern in $patterns) {
+        if ($chosen) { break }
+        foreach ($exe in (Get-ChildItem $pattern -ErrorAction SilentlyContinue | Sort-Object Name -Descending)) {
+            $ver = Get-PythonVersion $exe.FullName
+            if ($ver -and $ver -ge [version]'3.10') {
+                $chosen = $exe.FullName
+                $chosenVer = $ver
+                Write-Ok "python $ver -> $chosen (found in default install path)"
+                break
+            }
+        }
+    }
+}
+
 if (-not $chosen) {
     throw 'Python 3.10+ not found. Install it from https://www.python.org/downloads/ and re-run, or pass -PythonExe "C:\path\python.exe".'
+}
+if ($chosenVer -and $chosenVer -ge [version]'3.13') {
+    Write-Warn2 "python $chosenVer detected; 3.10-3.12 is recommended because onnxruntime / ctranslate2 wheels may be missing on 3.13."
 }
 
 Write-Step 'Preparing virtual environment'
