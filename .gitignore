@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+node_modules/
+.env
+*.db
+*.sqlite*
+server/backend/data/
+server/backend/note_results/
+server/backend/uploads/
+server/backend/logs/
+server/backend/tools/
+server/BillNote_frontend/test-results/
