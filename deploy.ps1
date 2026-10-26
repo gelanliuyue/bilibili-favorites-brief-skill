@@ -122,7 +122,18 @@ if (-not $SkipInstall) {
     & $VenvPy -m pip install --upgrade pip --quiet
     & $VenvPy -m pip install -r $Requirements
     if ($LASTEXITCODE -ne 0) { throw 'pip install failed' }
-    Write-Ok 'dependencies installed'
+
+    # ctranslate2==4.6.0 在 import 时依赖 pkg_resources，setuptools>=81 已移除它。
+    # requirements.txt 里已锁 setuptools<81；这里再兜一次，防止旧 venv 残留新版。
+    & $VenvPy -m pip install --quiet 'setuptools<81'
+    $smoke = & $VenvPy -c "import ctranslate2, faster_whisper, fastapi; print('ok')" 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warn2 "dependency import smoke test failed: $smoke"
+        Write-Host '         Try: & "' -NoNewline; Write-Host "$VenvPy" -NoNewline
+        Write-Host '" -m pip install "setuptools<81"  then re-run this script.' -ForegroundColor Yellow
+    } else {
+        Write-Ok 'dependencies installed (import smoke test passed)'
+    }
 } else {
     Write-Warn2 'dependency install skipped (-SkipInstall)'
 }
@@ -140,23 +151,75 @@ if (Test-Path $envFile) {
 }
 
 Write-Step 'Checking ffmpeg'
+function Set-EnvValue($path, $key, $value) {
+    # 只改目标行，保留其余内容和 UTF-8 无 BOM 编码
+    if (-not (Test-Path $path)) { return $false }
+    $lines = [System.IO.File]::ReadAllLines($path)
+    $hit = $false
+    for ($i = 0; $i -lt $lines.Length; $i++) {
+        if ($lines[$i] -match ('^\s*' + [regex]::Escape($key) + '\s*=')) { $lines[$i] = "$key=$value"; $hit = $true }
+    }
+    if (-not $hit) { $lines = @($lines) + "$key=$value" }
+    [System.IO.File]::WriteAllLines($path, $lines, (New-Object System.Text.UTF8Encoding($false)))
+    return $true
+}
+
+function Find-FfmpegDir {
+    # winget 装完当前 shell 的 PATH 往往还没刷新，Get-Command 会漏掉，这里直接扫常见落点
+    $onPath = Get-Command ffmpeg -ErrorAction SilentlyContinue
+    if ($onPath) { return (Split-Path $onPath.Source -Parent) }
+
+    $candidates = @(
+        (Join-Path $env:USERPROFILE 'scoop\shims\ffmpeg.exe'),
+        'C:\ProgramData\chocolatey\bin\ffmpeg.exe',
+        'C:\ffmpeg\bin\ffmpeg.exe'
+    )
+    foreach ($c in $candidates) {
+        if (Test-Path $c) { return (Split-Path $c -Parent) }
+    }
+
+    $wingetRoot = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages'
+    if (Test-Path $wingetRoot) {
+        $hit = Get-ChildItem -Path $wingetRoot -Filter 'ffmpeg.exe' -Recurse -Depth 5 -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($hit) { return (Split-Path $hit.FullName -Parent) }
+    }
+    return $null
+}
+
 $ffmpegOk = $false
 $ffmpegEnv = $null
 if (Test-Path $envFile) {
     $line = Select-String -Path $envFile -Pattern '^\s*FFMPEG_BIN_PATH\s*=\s*(.+)$' -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($line) {
         $ffmpegEnv = $line.Matches[0].Groups[1].Value.Trim().Trim('"').Trim("'")
-        $resolved = if ([System.IO.Path]::IsPathRooted($ffmpegEnv)) { $ffmpegEnv } else { Join-Path $BackendDir $ffmpegEnv }
-        if (Test-Path (Join-Path $resolved 'ffmpeg.exe')) { $ffmpegOk = $true; Write-Ok "FFMPEG_BIN_PATH -> $resolved" }
+        if ($ffmpegEnv) {
+            $resolved = if ([System.IO.Path]::IsPathRooted($ffmpegEnv)) { $ffmpegEnv } else { Join-Path $BackendDir $ffmpegEnv }
+            if (Test-Path (Join-Path $resolved 'ffmpeg.exe')) { $ffmpegOk = $true; Write-Ok "FFMPEG_BIN_PATH -> $resolved" }
+        }
     }
-}
-if (-not $ffmpegOk) {
-    $onPath = Get-Command ffmpeg -ErrorAction SilentlyContinue
-    if ($onPath) { $ffmpegOk = $true; Write-Ok "ffmpeg on PATH: $($onPath.Source)" }
 }
 if (-not $ffmpegOk) {
     $bundled = Join-Path $BackendDir 'tools\ffmpeg'
     if (Test-Path (Join-Path $bundled 'ffmpeg.exe')) { $ffmpegOk = $true; Write-Ok "bundled ffmpeg: $bundled" }
+}
+if (-not $ffmpegOk) {
+    $found = Find-FfmpegDir
+    if ($found) {
+        $ffmpegOk = $true
+        Write-Ok "ffmpeg found: $found"
+        # 关键：找到了但可能不在当前（或后端进程的）PATH 里，写进 .env 才真正生效
+        if ((Test-Path $envFile) -and -not $ffmpegEnv) {
+            if (Set-EnvValue $envFile 'FFMPEG_BIN_PATH' $found) {
+                $ffmpegOk = $true
+                Write-Ok "FFMPEG_BIN_PATH written to .env"
+            }
+        } elseif ($ffmpegEnv) {
+            Write-Warn2 "FFMPEG_BIN_PATH in .env is '$ffmpegEnv' but ffmpeg.exe is not there; using $found instead"
+            Set-EnvValue $envFile 'FFMPEG_BIN_PATH' $found | Out-Null
+            Write-Ok 'FFMPEG_BIN_PATH updated in .env'
+        }
+    }
 }
 if (-not $ffmpegOk) {
     Write-Warn2 'ffmpeg not found. Video/audio download and slicing will fail without it.'
@@ -196,10 +259,14 @@ Write-Host "    backend: $BackendDir"
 Write-Host "    .env   : $envFile"
 Write-Host ''
 Write-Host 'Next steps:' -ForegroundColor Cyan
-Write-Host "  1. Start backend:  `"$VenvPy`" main.py   (run inside $BackendDir)"
+Write-Host "  1. Start backend (terminal A):  cd `"$BackendDir`" ; .\.venv\Scripts\python.exe main.py"
 Write-Host '     default listener: http://127.0.0.1:8483  (override with BACKEND_PORT in .env)'
-Write-Host '  2. Open the UI, sign in to Bilibili, and save your model API key in Settings.'
-Write-Host '  3. Install the skill against this server:'
+Write-Host "  2. Start web UI (terminal B):   cd `"$ServerDir`" ; .\backend\.venv\Scripts\python.exe serve_web.py"
+Write-Host '     -> http://127.0.0.1:3015   (serves dist AND proxies /api to 8483)'
+Write-Host '     Do NOT use "python -m http.server": it has no /api proxy, the UI will'
+Write-Host '     report "backend failed to start" after 60s.'
+Write-Host '  3. Open the UI, sign in to Bilibili, and save your model API key in Settings.'
+Write-Host '  4. Install the skill against this server:'
 Write-Host "     powershell -ExecutionPolicy Bypass -File .\install.ps1 -ProjectRoot `"$ServerDir`""
 Write-Host ''
 

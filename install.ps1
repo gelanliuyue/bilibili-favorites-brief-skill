@@ -64,6 +64,18 @@ function Read-WithDefault($prompt, $default) {
 $ProjectRoot = Read-WithDefault "Path to the bili-brief project root" $ProjectRoot
 $ProjectRoot = $ProjectRoot.TrimEnd('\', '/')
 
+# 常见误填：把仓库根当成 project_root。技能会去 <project_root>\backend\.venv 找解释器，
+# 填仓库根必然失败，这里自动纠正到 <repo>\server。
+if (-not (Test-Path (Join-Path $ProjectRoot 'backend'))) {
+    $serverSub = Join-Path $ProjectRoot 'server'
+    if (Test-Path (Join-Path $serverSub 'backend')) {
+        Write-Warn2 "project_root pointed at the repo root; using '$serverSub' instead"
+        $ProjectRoot = $serverSub
+    } else {
+        Write-Warn2 "no 'backend' folder under $ProjectRoot. Pass the 'server' directory of this repo."
+    }
+}
+
 if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
     $OutputRoot = Join-Path $env:USERPROFILE 'Documents\BiliBrief'
 }
@@ -104,8 +116,20 @@ foreach ($t in $targets) {
 
     if (Test-Path $dest) {
         if ($Force) {
-            Remove-Item -Recurse -Force $dest
-            Write-Ok "$label existing copy replaced"
+            try {
+                Remove-Item -Recurse -Force $dest -ErrorAction Stop
+                Write-Ok "$label existing copy replaced"
+            } catch {
+                # 部分安全软件/受管目录会拦截递归删除（表现为「安全删除」拦截）。
+                # 退化为改名，效果等价且不会让整次安装失败。
+                $stale = "$dest.old-" + (Get-Date -Format 'yyyyMMdd-HHmmss')
+                try {
+                    Rename-Item -Path $dest -NewName (Split-Path $stale -Leaf) -ErrorAction Stop
+                    Write-Warn2 "$label copy could not be deleted; moved aside to $stale"
+                } catch {
+                    throw "Cannot replace $dest : both deletion and rename were blocked. Remove it manually and re-run."
+                }
+            }
         } else {
             $backup = "$dest.bak-" + (Get-Date -Format 'yyyyMMdd-HHmmss')
             Rename-Item -Path $dest -NewName (Split-Path $backup -Leaf)

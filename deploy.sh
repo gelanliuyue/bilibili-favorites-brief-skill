@@ -67,7 +67,14 @@ if [ "$SKIP_INSTALL" -eq 0 ]; then
     step "Installing Python dependencies (this takes several minutes)"
     "$VENV_PY" -m pip install --upgrade pip --quiet
     "$VENV_PY" -m pip install -r "$REQUIREMENTS"
-    ok "dependencies installed"
+    # ctranslate2==4.6.0 在 import 时依赖 pkg_resources，setuptools>=81 已移除它；
+    # requirements.txt 已锁 setuptools<81，这里再兜一次，防止旧 venv 残留新版。
+    "$VENV_PY" -m pip install --quiet "setuptools<81"
+    if "$VENV_PY" -c "import ctranslate2, faster_whisper, fastapi" >/dev/null 2>&1; then
+        ok "dependencies installed (import smoke test passed)"
+    else
+        warn "dependency import smoke test failed; run: $VENV_PY -m pip install \"setuptools<81\""
+    fi
 else
     warn "dependency install skipped"
 fi
@@ -110,8 +117,12 @@ step "Summary"
 printf '    python : %s\n    backend: %s\n    .env   : %s\n\n' "$VENV_PY" "$BACKEND_DIR" "$ENV_FILE"
 printf 'Next steps:\n'
 printf '  1. Start backend:  (cd "%s" && "%s" main.py)   default http://127.0.0.1:8483\n' "$BACKEND_DIR" "$VENV_PY"
-printf '  2. Open the UI, sign in to Bilibili, save the model API key in Settings.\n'
-printf '  3. Install the skill:  ./install.sh --project-root "%s"\n\n' "$SERVER_DIR"
+printf '  2. Start web UI:   (cd "%s" && "%s" serve_web.py)  -> http://127.0.0.1:3015\n' "$SERVER_DIR" "$VENV_PY"
+printf '     serve_web.py serves dist and proxies /api to the backend. Do NOT use\n'
+printf '     "python -m http.server": it has no /api proxy, the UI reports a false\n'
+printf '     "backend failed to start" after 60s.\n'
+printf '  3. Open the UI, sign in to Bilibili, save the model API key in Settings.\n'
+printf '  4. Install the skill:  ./install.sh --project-root "%s"\n\n' "$SERVER_DIR"
 
 if [ "$START" -eq 1 ]; then
     step "Starting backend (Ctrl+C to stop)"
