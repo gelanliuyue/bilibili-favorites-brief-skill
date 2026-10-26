@@ -188,5 +188,5 @@ npm run dev          # 默认 3015
 - 本仓库在原项目基础上增加了 BiliBrief 移动端界面、brief 提示词风格、字幕优先提交预检、R1 测试，以及技能与部署脚本。
 
 **未打包的内容**（体积或安全原因）：`.venv/`、`node_modules/`、`backend/data/`、`note_results/`、`uploads/`、`logs/`、
-`backend/tools/ffmpeg/`（约 161 MB 二进制）、`backend/.env`（真实密钥）、任何 SQLite 库。
-这些都由 `deploy.ps1` 或首次运行自动生成。
+`backend/tools/ffmpeg/`（约 161 MB 二进制）、`backend/.env`（真实密钥）、任何 SQLite 库、`server/doc/`（上游截图与微信群二维码，约 7 MB，与部署无关）。
+这些都由 `deploy.ps1` 或首次运行自动生成；`server/doc/` 可从上游 BiliNote 仓库获取。
